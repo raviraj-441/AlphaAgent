@@ -1,0 +1,27 @@
+
+Income Tax Act (India) - Excerpt for testing:
+
+1. SHORT-TERM CAPITAL GAINS (STCG):
+   Short-term capital gains on equity shares and equity mutual funds held for less than 12 months 
+   are taxed at 15% under section 111A (subject to conditions and Securities Transaction Tax).
+
+2. LONG-TERM CAPITAL GAINS (LTCG):
+   Long-term capital gains on equity shares and equity mutual funds exceeding INR 1 lakh are taxed 
+   at 10% without indexation under section 112A; gains up to INR 1 lakh in a financial year are exempt.
+
+3. FIFO ACCOUNTING:
+   FIFO (First-In-First-Out) accounting is commonly used for determining cost basis when multiple lots 
+   are present; tax-lot accounting can affect realized gains/losses.
+
+4. WASH SALE RULES:
+   India does not have an explicit "wash sale" rule identical to the US, but related-party and 
+   round-trip transactions can be scrutinized; investors should consult regulations.
+
+5. CAPITAL LOSS OFFSET:
+   Capital losses can be set off against capital gains; short-term capital losses can be set off 
+   against both short-term and long-term capital gains, while long-term capital losses can be set 
+   off only against long-term capital gains (subject to conditions).
+
+6. EXEMPTIONS:
+   Certain specified exemptions and grandfathering provisions may apply for securities held prior 
+   to specific dates.
