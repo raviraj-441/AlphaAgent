@@ -137,7 +137,9 @@ CORRELATION_THRESHOLDS = {
 
 # Tax Loss Constraints
 TAX_LOSS_CONSTRAINTS = {
-    "minimum_loss_amount": 100,  # USD
+    # Lowered default to allow smaller tax-loss harvesting opportunities to be considered.
+    # This value is a currency-agnostic baseline and can be overridden in AGENT_CONFIG
+    "minimum_loss_amount": 10,  # Default minimum saving amount (was 100)
     "minimum_loss_percentage": 5,  # Percent
     "wash_sale_period": 30,  # Days
     "holding_period_warning": 30,  # Days
@@ -184,7 +186,8 @@ AGENT_CONFIG = {
         "supported_formats": ["csv", "pdf", "excel"]
     },
     "tax_loss_identifier": {
-        "min_loss_threshold": 100,
+        # Default minimum loss threshold (numeric). Lower this to allow smaller opportunities.
+        "min_loss_threshold": 10,
         "min_loss_percentage": 5,
         "batch_size": 100
     },

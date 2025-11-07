@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from backend.config import AGENT_CONFIG, TAX_LOSS_CONSTRAINTS
 from dataclasses import dataclass, asdict
 from enum import Enum
 
@@ -342,17 +343,27 @@ class AgentOrchestrator:
     def _validate_compliance(self, losses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Simulate compliance validation."""
         validated = []
-        
+        # Use configured minimum tax-saving threshold (fallback to TAX_LOSS_CONSTRAINTS)
+        min_saving = AGENT_CONFIG.get("tax_loss_identifier", {}).get(
+            "min_loss_threshold",
+            TAX_LOSS_CONSTRAINTS.get("minimum_loss_amount", 100)
+        )
+
         for loss in losses:
             # Simulate compliance checks
-            if loss["tax_saving"] < 100:  # Skip trivial savings
+            # Skip trivial savings below configured threshold
+            try:
+                if loss.get("tax_saving", 0) < min_saving:
+                    loss["violation"] = f"Negligible tax benefit (below {min_saving})"
+                    continue
+            except Exception:
                 loss["violation"] = "Negligible tax benefit"
                 continue
-            
-            if loss["holding_period_days"] < 30:  # Possible wash-sale
+
+            if loss["holding_period_days"] < TAX_LOSS_CONSTRAINTS.get("wash_sale_period", 30):  # Possible wash-sale
                 loss["violation"] = "Within 30-day wash-sale window"
                 continue
-            
+
             validated.append(loss)
         
         return validated

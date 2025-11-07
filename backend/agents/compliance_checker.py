@@ -3,6 +3,7 @@ Regulatory Compliance Checker Agent - Validates tax-loss harvesting compliance.
 """
 
 import logging
+from backend.config import AGENT_CONFIG, TAX_LOSS_CONSTRAINTS
 from typing import Dict, Any, List
 
 from backend.utils.data_models import (
@@ -19,6 +20,10 @@ class RegulatoryComplianceAgent:
     Validates tax-loss harvesting transactions against Indian tax regulations.
     Uses RAG (Retrieval-Augmented Generation) with ChromaDB for tax law reasoning.
     """
+    # Note: The system-wide minimum loss / tax-saving threshold used by agents
+    # is configurable in `backend.config.AGENT_CONFIG['tax_loss_identifier']['min_loss_threshold']`
+    # and falls back to `backend.config.TAX_LOSS_CONSTRAINTS['minimum_loss_amount']`.
+    # Lower this value to allow smaller tax-loss harvesting opportunities.
     
     def __init__(self, llm_client: GroqLLMClient):
         """
