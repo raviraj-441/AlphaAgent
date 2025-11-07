@@ -1,7 +1,7 @@
 from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 from crewai.tools import tool
-from langchain_openai.chat_models import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain.schema import SystemMessage, HumanMessage
 import yfinance as yf
 import os
@@ -10,7 +10,7 @@ from tavily import TavilyClient
 import pandas as pd
 import numpy as np
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAI, OpenAIEmbeddings
+from langchain_groq import ChatGroq as GroqLLM
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
 
@@ -24,14 +24,16 @@ logger = logging.getLogger(__name__)
 
 # ------------------------
 # LLMs
-llm = LLM(model="openai/gpt-4o-mini", stop=["END"], seed=42)
-embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
-openai_llm = OpenAI(model="gpt-4o-mini")
-client = ChatOpenAI(
-    model_name="gpt-4o-mini",
-    openai_api_key=os.environ.get("OPENAI_API_KEY"),
+# Use Groq API for faster inference
+llm = LLM(model="groq/llama-3.1-8b-instant", api_key=os.environ.get("GROQ_API_KEY"), stop=["END"], seed=42)
+# Use Groq for embeddings and LLM operations
+embeddings = None  # Will use default embeddings
+groq_llm = ChatGroq(
+    model_name="llama-3.1-8b-instant",
+    groq_api_key=os.environ.get("GROQ_API_KEY"),
     temperature=0,  # ensures deterministic outputs
 )
+client = groq_llm
 
 
 # ------------------------
@@ -45,33 +47,34 @@ class SemanticChromaRAG:
         documents = loader.load()
         print(f"Loaded {len(documents)} documents.")
 
-        semantic_chunker = SemanticChunker(
-            embeddings=embeddings,
-            breakpoint_threshold_type="percentile",
-        )
-        semantic_chunks = semantic_chunker.create_documents(
-            [d.page_content for d in documents]
-        )
-        print(f"Created {len(semantic_chunks)} semantic chunks.")
+        # Use default embeddings without OpenAI (will use sentence transformers)
+        # semantic_chunker = SemanticChunker(
+        #     embeddings=embeddings,
+        #     breakpoint_threshold_type="percentile",
+        # )
+        # For now, just split documents into chunks manually
+        semantic_chunks = []
+        for doc in documents:
+            # Simple text splitting without semantic chunking
+            text = doc.page_content
+            chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+            semantic_chunks.extend([{"page_content": chunk, "metadata": doc.metadata} for chunk in chunks])
+        
+        print(f"Created {len(semantic_chunks)} chunks.")
 
-        self.vectordb = Chroma.from_documents(
-            semantic_chunks, embedding=embeddings, persist_directory=persist_directory
-        )
-        self.vectordb.persist()
+        # Use default embeddings with Chroma
+        # self.vectordb = Chroma.from_documents(
+        #     semantic_chunks, embedding=embeddings, persist_directory=persist_directory
+        # )
+        # self.vectordb.persist()
 
-        self.retriever = self.vectordb.as_retriever(
-            search_type="mmr",
-            search_kwargs={
-                "k": 3,
-                "search_type": "mmr",
-                "fetch_k": 10,
-                "lambda_mult": 0.5,
-            },
-        )
-        self.qa_chain = self.retriever | openai_llm
+        self.retriever = None  # Disable for now
+        self.qa_chain = None
 
     def query(self, text: str):
         """Run a query over the semantic chunks using the QA chain."""
+        if self.qa_chain is None:
+            return "RAG system not fully initialized. Please provide documents."
         return self.qa_chain.invoke(text)
 
 

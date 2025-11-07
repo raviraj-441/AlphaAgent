@@ -1,0 +1,70 @@
+groups:
+  - name: alphaagent_alerts
+    interval: 30s
+    rules:
+      # API Alerts
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="alphaagent-api", status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="alphaagent-api"}[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on AlphaAgent API"
+          description: "Error rate is {{ $value | humanizePercentage }} for instance {{ $labels.instance }}"
+
+      - alert: APIDown
+        expr: up{job="alphaagent-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AlphaAgent API is down"
+          description: "API instance {{ $labels.instance }} is unreachable"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="alphaagent-api"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency on AlphaAgent API"
+          description: "P95 latency is {{ $value }}s for endpoint {{ $labels.endpoint }}"
+
+      # ChromaDB Alerts
+      - alert: ChromaDown
+        expr: up{job="alphaagent-chroma"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ChromaDB is down"
+          description: "ChromaDB instance {{ $labels.instance }} is unreachable"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            process_resident_memory_bytes{job="alphaagent-api"} / 
+            node_memory_MemTotal_bytes{job="node"}
+          ) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      # Health Check Alerts
+      - alert: HealthCheckFailing
+        expr: health_check_status{job="alphaagent-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health check is failing"
+          description: "Health check on {{ $labels.instance }} has been failing for 2 minutes"

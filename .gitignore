@@ -1,15 +1,52 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyo
+*.pyc
 build/
 dist/
 wheels/
 *.egg-info
-notebooks/
-
 .venv
 .env
 .coding
 .python-version
-chroma_db
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.iml
+.DS_Store
+Thumbs.db
+
+# Jupyter notebooks (exploratory)
+notebooks/
+
+# Test artifacts
+test_report.json
+.pytest_cache/
+
+# Data & logs
+chroma_db/
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.Python
+
+# Development
+.coding
+uv.lock
+.venv/
+venv/
 

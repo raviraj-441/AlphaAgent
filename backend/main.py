@@ -6,10 +6,23 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
+
+# Load environment variables from .env file - must be before other imports
+load_dotenv()
+
+# Import path utilities
+from backend.utils.paths import get_tax_docs_dir
+from backend.utils.env import EnvManager
+from backend.utils.prometheus_metrics import PrometheusMiddleware, get_metrics
+
+# Ensure environment is loaded
+EnvManager.load_env()
 
 # Configure logging
 logging.basicConfig(
@@ -34,7 +47,8 @@ async def lifespan(app: FastAPI):
     # Initialize vector store and load documents
     try:
         vs = get_vector_store()
-        vs.load_income_tax_documents("./data/income_tax_law_texts/")
+        tax_docs_dir = get_tax_docs_dir()
+        vs.load_income_tax_documents(str(tax_docs_dir))
         logger.info("Vector store initialized and documents loaded")
     except Exception as e:
         logger.warning(f"Vector store initialization skipped: {e}")
@@ -62,8 +76,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Prometheus metrics middleware
+app.add_middleware(PrometheusMiddleware)
 
-# Health check route
+
+# Metrics endpoint
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return get_metrics()
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
