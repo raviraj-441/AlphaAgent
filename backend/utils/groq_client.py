@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 class GroqLLMClient:
     """
     Client for integrating with Groq API.
-    Supports chat-based interactions using Llama 3.1 70B model.
+    Supports chat-based interactions using latest LLaMA models.
     """
     
-    DEFAULT_MODEL = "llama-3.1-70b-versatile"
+    DEFAULT_MODEL = "llama-3.1-8b-instant"  # Updated to active model
     API_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     
     def __init__(self, api_key: Optional[str] = None):
