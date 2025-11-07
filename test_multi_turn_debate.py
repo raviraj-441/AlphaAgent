@@ -5,10 +5,17 @@ Run a complete debate cycle with agents discussing and refining positions
 until consensus is reached or max rounds exceeded.
 """
 
+import os
 import json
+import pytest
 from datetime import datetime
 from backend.core.multi_turn_debate_system import MultiTurnDebateSystem, StockPosition
 
+
+@pytest.mark.skipif(
+    not os.getenv("GROQ_API_KEY"),
+    reason="GROQ_API_KEY not set - skipping LLM-dependent tests"
+)
 def test_multi_turn_debate():
     """Test the multi-turn debate system."""
     
@@ -120,3 +127,60 @@ def test_multi_turn_debate():
 if __name__ == "__main__":
     session = test_multi_turn_debate()
     print("\n[COMPLETE] Debate complete!\n")
+
+
+def test_stock_position_creation():
+    """Test StockPosition dataclass creation."""
+    position = StockPosition(
+        symbol="TEST",
+        quantity=100,
+        cost_basis=1000,
+        current_price=900,
+        holding_days=365,
+        loss_amount=10000,
+        tax_saving=3000
+    )
+    
+    assert position.symbol == "TEST"
+    assert position.quantity == 100
+    assert position.cost_basis == 1000
+    assert position.current_price == 900
+    assert position.holding_days == 365
+    assert position.loss_amount == 10000
+    assert position.tax_saving == 3000
+    print("[OK] StockPosition creation test passed")
+
+
+def test_portfolio_creation():
+    """Test portfolio creation with multiple positions."""
+    positions = [
+        StockPosition(
+            symbol="AAPL",
+            quantity=50,
+            cost_basis=150,
+            current_price=140,
+            holding_days=180,
+            loss_amount=500,
+            tax_saving=150
+        ),
+        StockPosition(
+            symbol="GOOGL",
+            quantity=25,
+            cost_basis=2500,
+            current_price=2400,
+            holding_days=90,
+            loss_amount=2500,
+            tax_saving=750
+        ),
+    ]
+    
+    assert len(positions) == 2
+    assert positions[0].symbol == "AAPL"
+    assert positions[1].symbol == "GOOGL"
+    
+    total_loss = sum(p.loss_amount for p in positions)
+    total_tax_saving = sum(p.tax_saving for p in positions)
+    
+    assert total_loss == 3000
+    assert total_tax_saving == 900
+    print("[OK] Portfolio creation test passed")

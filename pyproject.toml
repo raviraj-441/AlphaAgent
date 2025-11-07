@@ -71,7 +71,7 @@ testpaths = ["test_multi_turn_debate.py"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=backend --cov-report=term-missing"
+addopts = "-v"
 
 [tool.black]
 line-length = 100
