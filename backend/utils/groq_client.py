@@ -16,9 +16,19 @@ class GroqLLMClient:
     """
     Client for integrating with Groq API.
     Supports chat-based interactions using latest LLaMA models.
+    Includes automatic model fallback on rate limits.
     """
     
-    DEFAULT_MODEL = "llama-3.1-8b-instant"  # Updated to active model
+    # Model priority list - will fallback in order if rate limit hit
+    AVAILABLE_MODELS = [
+        "llama-3.1-8b-instant",      # Primary (fastest)
+        "llama-3.2-3b-preview",      # Fallback 1 (smaller, faster)
+        "llama-3.1-70b-versatile",   # Fallback 2 (slower but more capable)
+        "mixtral-8x7b-32768",        # Fallback 3 (alternative architecture)
+        "gemma2-9b-it",              # Fallback 4 (Google's model)
+    ]
+    
+    DEFAULT_MODEL = AVAILABLE_MODELS[0]
     API_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     
     def __init__(self, api_key: Optional[str] = None):
@@ -40,6 +50,7 @@ class GroqLLMClient:
             )
         
         self.model = self.DEFAULT_MODEL
+        self.current_model_index = 0
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",
@@ -113,6 +124,55 @@ class GroqLLMClient:
             raise RuntimeError("Groq API request timed out after 30 seconds")
         
         except requests.exceptions.HTTPError as e:
+            # Check if it's a rate limit error
+            if e.response.status_code == 429:
+                error_data = e.response.json() if e.response.content else {}
+                error_msg = error_data.get("error", {}).get("message", "")
+                
+                # Try to switch to next available model
+                if self.current_model_index < len(self.AVAILABLE_MODELS) - 1:
+                    self.current_model_index += 1
+                    old_model = self.model
+                    self.model = self.AVAILABLE_MODELS[self.current_model_index]
+                    
+                    logger.warning(
+                        f"Rate limit hit on {old_model}. "
+                        f"Switching to fallback model: {self.model}"
+                    )
+                    
+                    # Retry with new model
+                    payload["model"] = self.model
+                    try:
+                        response = self.session.post(
+                            self.API_ENDPOINT,
+                            json=payload,
+                            timeout=30
+                        )
+                        response.raise_for_status()
+                        result = response.json()
+                        
+                        if "choices" not in result or not result["choices"]:
+                            raise RuntimeError("Invalid API response: no choices returned")
+                        
+                        assistant_message = result["choices"][0]["message"]["content"]
+                        
+                        usage = result.get("usage", {})
+                        logger.info(
+                            f"Groq API call successful with fallback model {self.model}. "
+                            f"Input tokens: {usage.get('prompt_tokens', 0)}, "
+                            f"Output tokens: {usage.get('completion_tokens', 0)}"
+                        )
+                        
+                        return assistant_message
+                        
+                    except Exception as retry_error:
+                        logger.error(f"Fallback model {self.model} also failed: {retry_error}")
+                        raise RuntimeError(f"Groq API error (after model fallback): {e.response.text}")
+                else:
+                    logger.error(f"All models exhausted. Rate limit error: {error_msg}")
+                    raise RuntimeError(f"Groq API error (all models rate limited): {e.response.text}")
+            
+            # Non-rate-limit HTTP errors
             logger.error(f"Groq API HTTP error: {e.response.status_code} - {e.response.text}")
             raise RuntimeError(f"Groq API error: {e.response.text}")
         
@@ -222,14 +282,32 @@ class GroqLLMClient:
         return results
     
     def set_model(self, model: str):
-        """Change the model being used."""
-        self.model = model
-        logger.info(f"Model changed to: {self.model}")
+        """
+        Change the model being used.
+        
+        Args:
+            model: Model name to use
+        """
+        if model in self.AVAILABLE_MODELS:
+            self.model = model
+            self.current_model_index = self.AVAILABLE_MODELS.index(model)
+            logger.info(f"Model changed to: {self.model} (index {self.current_model_index})")
+        else:
+            logger.warning(f"Model {model} not in available models list. Using anyway.")
+            self.model = model
+    
+    def reset_model(self):
+        """Reset to the default primary model."""
+        self.model = self.DEFAULT_MODEL
+        self.current_model_index = 0
+        logger.info(f"Model reset to default: {self.model}")
     
     def get_model_info(self) -> Dict[str, str]:
-        """Get information about current model."""
+        """Get information about current model and available fallbacks."""
         return {
-            "model": self.model,
+            "current_model": self.model,
+            "model_index": self.current_model_index,
+            "available_models": self.AVAILABLE_MODELS,
             "api_endpoint": self.API_ENDPOINT,
             "max_tokens_default": 2048
         }
