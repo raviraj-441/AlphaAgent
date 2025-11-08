@@ -88,6 +88,7 @@ class DebateSession:
     supervisor_conclusion: str
     started_at: str
     ended_at: str
+    news_context: Dict[str, Any] = field(default_factory=dict)  # News data used in debate
 
 
 class MultiTurnDebateSystem:
@@ -355,13 +356,15 @@ Consensus?"""
         symbols = list(set([p.symbol for p in positions]))
         logger.info(f"Fetching news for {len(symbols)} symbols: {', '.join(symbols)}")
         
-        news_context = self.news_fetcher.get_enriched_context(symbols)
+        # Get detailed news data for logging
+        news_data = self.news_fetcher.get_news_context_for_debate(symbols)
+        news_context_string = self.news_fetcher.get_enriched_context(symbols)
         
         # Append news to existing context
         if context:
-            context = context + "\n" + news_context
+            context = context + "\n" + news_context_string
         else:
-            context = news_context
+            context = news_context_string
         
         all_agent_statements = []
         debate_rounds = []
@@ -460,7 +463,8 @@ Provide a brief executive summary of the debate outcome and final strategy."""
             total_rounds=len(debate_rounds),
             supervisor_conclusion=supervisor_conclusion,
             started_at=started_at,
-            ended_at=ended_at
+            ended_at=ended_at,
+            news_context=news_data  # Include news data in session
         )
         
         # Save session
@@ -522,6 +526,7 @@ Provide a brief executive summary of the debate outcome and final strategy."""
                 }
                 for p in session.positions
             ],
+            "news_context": session.news_context,  # Include news articles and sentiment
             "rounds": [
                 {
                     "round_number": r.round_number,
