@@ -1,5 +1,6 @@
 """
 Tax Savings Calculator Agent - Computes immediate and projected tax savings.
+Configured for Indian Income Tax and Capital Gains Tax rules.
 """
 
 import logging
@@ -23,57 +24,84 @@ class MonteCarloResult:
 
 class TaxSavingsCalculatorAgent:
     """
-    Calculates immediate tax savings and projects 10-year growth.
+    Calculates immediate tax savings and projects 10-year growth for Indian market.
     Uses Monte Carlo simulation for future value estimation.
+    
+    Indian Tax Rules (FY 2024-25):
+    - Short Term Capital Gains (STCG): 20% on equities held < 1 year
+    - Long Term Capital Gains (LTCG): 12.5% on equities held >= 1 year (no indexation on equities)
+    - Income Tax: Progressive slabs under new regime
     """
     
-    # Assumptions
-    ANNUAL_RETURN_MEAN = 0.08      # 8% average annual return
-    ANNUAL_RETURN_STD = 0.03       # 3% standard deviation
-    INFLATION_RATE = 0.04          # 4% annual inflation
-    TAX_BRACKETS = {
-        0.10: 50000,      # 10% for income up to 50k
-        0.20: 500000,     # 20% for 50k to 500k
-        0.30: float('inf') # 30% for above 500k
+    # Indian Market Assumptions
+    ANNUAL_RETURN_MEAN = 0.12      # 12% average annual return (Indian equities historical)
+    ANNUAL_RETURN_STD = 0.15       # 15% standard deviation (higher volatility)
+    INFLATION_RATE = 0.06          # 6% annual inflation (India CPI average)
+    
+    # Capital Gains Tax Rates (Indian Market)
+    STCG_RATE = 0.20               # 20% for equity held < 1 year
+    LTCG_RATE = 0.125              # 12.5% for equity held >= 1 year
+    LTCG_EXEMPTION = 125000        # ₹1.25 lakh exemption per year on LTCG
+    
+    # Income Tax Slabs (New Regime FY 2024-25) - applicable for offsetting gains
+    INCOME_TAX_SLABS = {
+        0.00: 300000,              # 0% up to ₹3 lakh
+        0.05: 700000,              # 5% from ₹3L to ₹7L
+        0.10: 1000000,             # 10% from ₹7L to ₹10L
+        0.15: 1200000,             # 15% from ₹10L to ₹12L
+        0.20: 1500000,             # 20% from ₹12L to ₹15L
+        0.30: float('inf')         # 30% above ₹15L
     }
     
     def __init__(self):
-        """Initialize Tax Savings Calculator Agent."""
+        """Initialize Tax Savings Calculator Agent for Indian market."""
         self.logger = logging.getLogger(__name__)
     
     def calculate_savings(
         self,
         harvested_opportunities: List[TaxLossOpportunity],
         applicable_tax_rate: float = None,
-        annual_income: float = None
+        annual_income: float = None,
+        use_capital_gains_rate: bool = True
     ) -> TaxSavingsCalculation:
         """
-        Calculate immediate and projected tax savings.
+        Calculate immediate and projected tax savings using Indian tax rules.
         
         Args:
             harvested_opportunities: List of opportunities being harvested
-            applicable_tax_rate: Tax rate to apply (0.0-1.0). If None, estimated from income.
-            annual_income: Annual income for bracket estimation
+            applicable_tax_rate: Tax rate to apply (0.0-1.0). If None, calculated from holding period
+            annual_income: Annual income for income tax bracket estimation
+            use_capital_gains_rate: If True, use STCG/LTCG rates based on holding period
         
         Returns:
             TaxSavingsCalculation object
         """
-        self.logger.info(f"Calculating savings for {len(harvested_opportunities)} opportunities")
+        self.logger.info(f"Calculating savings for {len(harvested_opportunities)} opportunities (Indian tax rules)")
         
         # Calculate total harvested loss
         total_loss = sum(opp.unrealized_loss for opp in harvested_opportunities)
         
         # Determine applicable tax rate
         if applicable_tax_rate is None:
-            applicable_tax_rate = self._estimate_tax_bracket(annual_income or 400000)
+            if use_capital_gains_rate:
+                # Calculate weighted average capital gains rate based on holding periods
+                applicable_tax_rate = self._calculate_weighted_cg_rate(harvested_opportunities)
+            else:
+                # Use income tax bracket
+                applicable_tax_rate = self._estimate_income_tax_bracket(annual_income or 1000000)
         
-        # Calculate immediate savings
+        # Calculate immediate savings (losses can offset gains)
         immediate_savings = total_loss * applicable_tax_rate
         
-        # Project 10-year growth using Monte Carlo
-        initial_invested = total_savings = immediate_savings
+        # For LTCG, consider annual exemption if applicable
+        ltcg_count = sum(1 for opp in harvested_opportunities 
+                        if opp.holding and opp.holding.holding_days >= 365)
+        if ltcg_count > 0 and use_capital_gains_rate:
+            # Proportional exemption benefit
+            exemption_benefit = min(self.LTCG_EXEMPTION * self.LTCG_RATE, immediate_savings * 0.1)
+            immediate_savings += exemption_benefit
         
-        # Simulate reinvesting tax savings
+        # Project 10-year growth using Monte Carlo (reinvesting tax savings in Indian equities)
         projected_value = self._monte_carlo_projection(
             initial_value=immediate_savings,
             years=10,
@@ -88,7 +116,11 @@ class TaxSavingsCalculatorAgent:
             "inflation_rate_percent": self.INFLATION_RATE * 100,
             "projection_years": 10,
             "monte_carlo_runs": 1000,
-            "tax_rate_applied_percent": applicable_tax_rate * 100
+            "tax_rate_applied_percent": applicable_tax_rate * 100,
+            "market": "India",
+            "stcg_rate_percent": self.STCG_RATE * 100,
+            "ltcg_rate_percent": self.LTCG_RATE * 100,
+            "ltcg_exemption_inr": self.LTCG_EXEMPTION
         }
         
         return TaxSavingsCalculation(
@@ -102,9 +134,36 @@ class TaxSavingsCalculatorAgent:
             assumptions=assumptions
         )
     
-    def _estimate_tax_bracket(self, annual_income: float) -> float:
+    def _calculate_weighted_cg_rate(self, opportunities: List[TaxLossOpportunity]) -> float:
         """
-        Estimate applicable tax bracket from annual income.
+        Calculate weighted average capital gains tax rate based on holding periods.
+        
+        Args:
+            opportunities: List of tax loss opportunities
+        
+        Returns:
+            Weighted average tax rate
+        """
+        if not opportunities:
+            return self.LTCG_RATE
+        
+        total_loss = sum(opp.unrealized_loss for opp in opportunities)
+        if total_loss == 0:
+            return self.LTCG_RATE
+        
+        weighted_rate = 0.0
+        for opp in opportunities:
+            weight = opp.unrealized_loss / total_loss
+            # STCG if held < 365 days, LTCG otherwise
+            holding_days = opp.holding.holding_days if opp.holding else 0
+            rate = self.STCG_RATE if holding_days < 365 else self.LTCG_RATE
+            weighted_rate += rate * weight
+        
+        return weighted_rate
+    
+    def _estimate_income_tax_bracket(self, annual_income: float) -> float:
+        """
+        Estimate applicable income tax bracket from annual income (New Tax Regime).
         
         Args:
             annual_income: Annual income in rupees
@@ -112,7 +171,7 @@ class TaxSavingsCalculatorAgent:
         Returns:
             Estimated tax rate (0.0-1.0)
         """
-        for rate, limit in sorted(self.TAX_BRACKETS.items()):
+        for rate, limit in sorted(self.INCOME_TAX_SLABS.items()):
             if annual_income <= limit:
                 return rate
         
@@ -139,7 +198,7 @@ class TaxSavingsCalculatorAgent:
         Returns:
             Average projected value across runs
         """
-        self.logger.debug(f"Running {runs} Monte Carlo simulations for {years} years")
+        self.logger.debug(f"Running {runs} Monte Carlo simulations for {years} years (Indian market assumptions)")
         
         final_values = []
         
@@ -155,7 +214,7 @@ class TaxSavingsCalculatorAgent:
         
         # Return average projected value
         avg_value = sum(final_values) / len(final_values)
-        self.logger.debug(f"Average projected value: ${avg_value:.2f}")
+        self.logger.debug(f"Average projected value: ₹{avg_value:,.2f}")
         
         return avg_value
     
@@ -283,29 +342,35 @@ class TaxSavingsCalculatorAgent:
         calculation: TaxSavingsCalculation
     ) -> Dict[str, Any]:
         """
-        Generate a comprehensive tax savings report.
+        Generate a comprehensive tax savings report for Indian market.
         
         Args:
             calculation: TaxSavingsCalculation object
         
         Returns:
-            Formatted report
+            Formatted report with Indian currency (INR)
         """
         return {
             "summary": {
                 "transactions_harvested": calculation.transaction_count,
-                "total_loss_harvested": f"${calculation.total_harvested_loss:,.2f}",
+                "total_loss_harvested": f"₹{calculation.total_harvested_loss:,.2f}",
                 "applicable_tax_rate": f"{calculation.applicable_tax_rate * 100}%"
             },
             "immediate_impact": {
-                "tax_savings": f"${calculation.immediate_tax_savings:,.2f}",
+                "tax_savings": f"₹{calculation.immediate_tax_savings:,.2f}",
                 "effective_return": f"{(calculation.immediate_tax_savings / calculation.total_harvested_loss * 100):.1f}%"
             },
             "10_year_projection": {
-                "initial_investment": f"${calculation.immediate_tax_savings:,.2f}",
-                "projected_value": f"${calculation.projected_10yr_value:,.2f}",
-                "value_increase": f"${calculation.projected_value_increase:,.2f}",
-                "cagr": f"{(calculation.projected_10yr_value / calculation.immediate_tax_savings - 1) / 10 * 100:.2f}%"
+                "initial_investment": f"₹{calculation.immediate_tax_savings:,.2f}",
+                "projected_value": f"₹{calculation.projected_10yr_value:,.2f}",
+                "value_increase": f"₹{calculation.projected_value_increase:,.2f}",
+                "cagr": f"{self._calculate_cagr(calculation.immediate_tax_savings, calculation.projected_10yr_value, 10) * 100:.2f}%"
             },
-            "assumptions": calculation.assumptions
+            "assumptions": calculation.assumptions,
+            "tax_notes": {
+                "stcg_info": "Short Term Capital Gains (holding < 1 year): 20%",
+                "ltcg_info": "Long Term Capital Gains (holding >= 1 year): 12.5%",
+                "ltcg_exemption": f"Annual LTCG exemption: ₹{self.LTCG_EXEMPTION:,}",
+                "market": "Indian Equities"
+            }
         }
