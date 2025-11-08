@@ -19,6 +19,7 @@ from enum import Enum
 
 from backend.utils.groq_client import GroqLLMClient
 from backend.utils.news_fetcher import NewsFetcher
+from backend.utils.market_analyzer import MarketAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class DebateSession:
     supervisor_conclusion: str
     started_at: str
     ended_at: str
-    news_context: Dict[str, Any] = field(default_factory=dict)  # News data used in debate
+    market_analysis: Dict[str, Any] = field(default_factory=dict)  # Comprehensive market data (news, sentiment, volatility, technicals)
 
 
 class MultiTurnDebateSystem:
@@ -112,7 +113,7 @@ class MultiTurnDebateSystem:
             api_delay: Delay in seconds between API calls to avoid rate limits
         """
         self.llm = GroqLLMClient()
-        self.news_fetcher = NewsFetcher()  # Initialize news fetcher
+        self.market_analyzer = MarketAnalyzer()  # Initialize comprehensive analyzer
         self.max_rounds = max_rounds
         self.api_delay = api_delay  # Delay between API calls
         self.debate_log_dir = Path("logs/multi_turn_debates")
@@ -352,19 +353,31 @@ Consensus?"""
         
         logger.info(f"Starting multi-turn debate session: {session_id}")
         
-        # Fetch news context for all symbols in portfolio
+        # Prepare positions for market analysis
         symbols = list(set([p.symbol for p in positions]))
-        logger.info(f"Fetching news for {len(symbols)} symbols: {', '.join(symbols)}")
+        logger.info(f"Analyzing {len(symbols)} symbols with comprehensive market data...")
         
-        # Get detailed news data for logging
-        news_data = self.news_fetcher.get_news_context_for_debate(symbols)
-        news_context_string = self.news_fetcher.get_enriched_context(symbols)
+        # Get comprehensive market analysis (news + sentiment + market data + technicals)
+        position_data = [
+            {
+                'symbol': p.symbol,
+                'current_price': p.current_price,
+                'cost_basis': p.cost_basis,
+                'holding_days': p.holding_days
+            }
+            for p in positions
+        ]
         
-        # Append news to existing context
+        portfolio_analysis = self.market_analyzer.get_portfolio_analysis(position_data)
+        
+        # Format analysis for agents
+        market_context = self.market_analyzer.format_for_agents(portfolio_analysis)
+        
+        # Append market analysis to existing context
         if context:
-            context = context + "\n" + news_context_string
+            context = context + "\n" + market_context
         else:
-            context = news_context_string
+            context = market_context
         
         all_agent_statements = []
         debate_rounds = []
@@ -464,7 +477,7 @@ Provide a brief executive summary of the debate outcome and final strategy."""
             supervisor_conclusion=supervisor_conclusion,
             started_at=started_at,
             ended_at=ended_at,
-            news_context=news_data  # Include news data in session
+            market_analysis=portfolio_analysis  # Include complete market analysis in session
         )
         
         # Save session
@@ -526,7 +539,7 @@ Provide a brief executive summary of the debate outcome and final strategy."""
                 }
                 for p in session.positions
             ],
-            "news_context": session.news_context,  # Include news articles and sentiment
+            "market_analysis": session.market_analysis,  # Include comprehensive market analysis (news, sentiment, volatility, technicals)
             "rounds": [
                 {
                     "round_number": r.round_number,
