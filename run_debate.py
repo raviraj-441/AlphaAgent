@@ -8,6 +8,10 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(
