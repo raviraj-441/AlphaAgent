@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from backend.utils.groq_client import GroqLLMClient
+from backend.utils.news_fetcher import NewsFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class MultiTurnDebateSystem:
             api_delay: Delay in seconds between API calls to avoid rate limits
         """
         self.llm = GroqLLMClient()
+        self.news_fetcher = NewsFetcher()  # Initialize news fetcher
         self.max_rounds = max_rounds
         self.api_delay = api_delay  # Delay between API calls
         self.debate_log_dir = Path("logs/multi_turn_debates")
@@ -348,6 +350,18 @@ Consensus?"""
         started_at = datetime.now().isoformat()
         
         logger.info(f"Starting multi-turn debate session: {session_id}")
+        
+        # Fetch news context for all symbols in portfolio
+        symbols = list(set([p.symbol for p in positions]))
+        logger.info(f"Fetching news for {len(symbols)} symbols: {', '.join(symbols)}")
+        
+        news_context = self.news_fetcher.get_enriched_context(symbols)
+        
+        # Append news to existing context
+        if context:
+            context = context + "\n" + news_context
+        else:
+            context = news_context
         
         all_agent_statements = []
         debate_rounds = []
