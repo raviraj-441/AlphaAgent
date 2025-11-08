@@ -85,8 +85,8 @@ def run_portfolio_debate(
     logger.info("STARTING MULTI-TURN PORTFOLIO DEBATE")
     logger.info("="*80)
     
-    # Initialize debate system
-    debate_system = MultiTurnDebateSystem(max_rounds=max_rounds)
+    # Initialize debate system with rate limit protection (1s delay between API calls)
+    debate_system = MultiTurnDebateSystem(max_rounds=max_rounds, api_delay=1.0)
     
     # Display portfolio
     logger.info(f"\nPortfolio: {len(positions)} positions")

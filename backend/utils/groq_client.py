@@ -5,6 +5,7 @@ Groq API client for LLM integration.
 import os
 import logging
 import json
+import time
 from typing import Dict, List, Optional, Any
 import requests
 from datetime import datetime
@@ -129,48 +130,79 @@ class GroqLLMClient:
                 error_data = e.response.json() if e.response.content else {}
                 error_msg = error_data.get("error", {}).get("message", "")
                 
-                # Try to switch to next available model
-                if self.current_model_index < len(self.AVAILABLE_MODELS) - 1:
-                    self.current_model_index += 1
-                    old_model = self.model
-                    self.model = self.AVAILABLE_MODELS[self.current_model_index]
+                # Extract wait time from error message if available
+                import re
+                wait_match = re.search(r'try again in ([\d.]+)s', error_msg)
+                wait_time = float(wait_match.group(1)) if wait_match else 5.0
+                
+                logger.warning(f"Rate limit hit. Waiting {wait_time}s before retry...")
+                time.sleep(wait_time + 1)  # Add buffer
+                
+                # Retry once after waiting
+                try:
+                    response = self.session.post(
+                        self.API_ENDPOINT,
+                        json=payload,
+                        timeout=30
+                    )
+                    response.raise_for_status()
+                    result = response.json()
                     
-                    logger.warning(
-                        f"Rate limit hit on {old_model}. "
-                        f"Switching to fallback model: {self.model}"
+                    if "choices" not in result or not result["choices"]:
+                        raise RuntimeError("Invalid API response: no choices returned")
+                    
+                    assistant_message = result["choices"][0]["message"]["content"]
+                    
+                    usage = result.get("usage", {})
+                    logger.info(
+                        f"Groq API call successful after retry. "
+                        f"Input tokens: {usage.get('prompt_tokens', 0)}, "
+                        f"Output tokens: {usage.get('completion_tokens', 0)}"
                     )
                     
-                    # Retry with new model
-                    payload["model"] = self.model
-                    try:
-                        response = self.session.post(
-                            self.API_ENDPOINT,
-                            json=payload,
-                            timeout=30
-                        )
-                        response.raise_for_status()
-                        result = response.json()
+                    return assistant_message
+                    
+                except Exception as retry_error:
+                    # If retry fails, try fallback model
+                    if self.current_model_index < len(self.AVAILABLE_MODELS) - 1:
+                        self.current_model_index += 1
+                        old_model = self.model
+                        self.model = self.AVAILABLE_MODELS[self.current_model_index]
                         
-                        if "choices" not in result or not result["choices"]:
-                            raise RuntimeError("Invalid API response: no choices returned")
-                        
-                        assistant_message = result["choices"][0]["message"]["content"]
-                        
-                        usage = result.get("usage", {})
-                        logger.info(
-                            f"Groq API call successful with fallback model {self.model}. "
-                            f"Input tokens: {usage.get('prompt_tokens', 0)}, "
-                            f"Output tokens: {usage.get('completion_tokens', 0)}"
+                        logger.warning(
+                            f"Retry failed. Switching to fallback model: {self.model}"
                         )
                         
-                        return assistant_message
-                        
-                    except Exception as retry_error:
-                        logger.error(f"Fallback model {self.model} also failed: {retry_error}")
-                        raise RuntimeError(f"Groq API error (after model fallback): {e.response.text}")
-                else:
-                    logger.error(f"All models exhausted. Rate limit error: {error_msg}")
-                    raise RuntimeError(f"Groq API error (all models rate limited): {e.response.text}")
+                        payload["model"] = self.model
+                        try:
+                            response = self.session.post(
+                                self.API_ENDPOINT,
+                                json=payload,
+                                timeout=30
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            
+                            if "choices" not in result or not result["choices"]:
+                                raise RuntimeError("Invalid API response: no choices returned")
+                            
+                            assistant_message = result["choices"][0]["message"]["content"]
+                            
+                            usage = result.get("usage", {})
+                            logger.info(
+                                f"Groq API call successful with fallback model {self.model}. "
+                                f"Input tokens: {usage.get('prompt_tokens', 0)}, "
+                                f"Output tokens: {usage.get('completion_tokens', 0)}"
+                            )
+                            
+                            return assistant_message
+                            
+                        except Exception as fallback_error:
+                            logger.error(f"Fallback model {self.model} also failed: {fallback_error}")
+                            raise RuntimeError(f"Groq API error (after wait and fallback): {e.response.text}")
+                    else:
+                        logger.error(f"All retry attempts exhausted")
+                        raise RuntimeError(f"Groq API error (all retries exhausted): {e.response.text}")
             
             # Non-rate-limit HTTP errors
             logger.error(f"Groq API HTTP error: {e.response.status_code} - {e.response.text}")

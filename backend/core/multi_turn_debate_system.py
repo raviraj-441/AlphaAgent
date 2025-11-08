@@ -10,6 +10,7 @@ Agents engage in continuous rounds of debate:
 
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
@@ -100,10 +101,17 @@ class MultiTurnDebateSystem:
     5. Repeat until consensus or max rounds
     """
     
-    def __init__(self, max_rounds: int = 5):
-        """Initialize multi-turn debate system."""
+    def __init__(self, max_rounds: int = 5, api_delay: float = 0.5):
+        """
+        Initialize multi-turn debate system.
+        
+        Args:
+            max_rounds: Maximum number of debate rounds
+            api_delay: Delay in seconds between API calls to avoid rate limits
+        """
         self.llm = GroqLLMClient()
         self.max_rounds = max_rounds
+        self.api_delay = api_delay  # Delay between API calls
         self.debate_log_dir = Path("logs/multi_turn_debates")
         self.debate_log_dir.mkdir(parents=True, exist_ok=True)
         
@@ -147,47 +155,44 @@ class MultiTurnDebateSystem:
         
         role_info = role_context[agent_role]
         
-        system_prompt = f"""You are the {agent_role.value} agent in a portfolio debate.
+        system_prompt = f"""You are {agent_role.value} in a portfolio debate.
+Goal: {role_info['goal']}
+Focus: {role_info['focus']}
 
-Your Goal: {role_info['goal']}
-Your Focus: {role_info['focus']}
-
-You are part of a multi-agent discussion about which stocks to harvest vs keep.
-Be assertive but open to discussion. Respond to other agents' points.
-Format your response as:
+Format:
 POSITION: [HARVEST/KEEP/PRIORITY_HARVEST]
 CONFIDENCE: [0-100]
-KEY_POINTS: [Bullet list of 3-4 key arguments]
-RESPONSE_TO_OTHERS: [Address specific points from other agents if applicable]
-DETAILED_REASONING: [Your full analysis]"""
+KEY_POINTS: [3 brief arguments]
+REASONING: [Short analysis]"""
         
-        positions_str = "\n".join([
-            f"  {p.symbol}: Loss ${p.loss_amount:,.0f}, Tax Saving ${p.tax_saving:,.0f}, Days: {p.holding_days}"
+        # OPTIMIZED: Summarize portfolio instead of listing all details
+        total_loss = sum(p.loss_amount for p in positions)
+        total_saving = sum(p.tax_saving for p in positions)
+        
+        # OPTIMIZED: Compact position format
+        positions_str = ", ".join([
+            f"{p.symbol}(${p.loss_amount/1000:.0f}k loss, {p.holding_days}d)"
             for p in positions
         ])
         
-        # Build discussion context
+        # OPTIMIZED: Only include last round, not all history
         discussion_context = ""
         if previous_statements:
-            discussion_context = "\n\n=== Previous Discussion ===\n"
-            for stmt in previous_statements:
-                discussion_context += f"\n{stmt.agent_role.value}:\n"
-                discussion_context += f"Position: {stmt.position} (Confidence: {stmt.confidence}%)\n"
-                discussion_context += f"Arguments: {', '.join(stmt.key_points)}\n"
+            last_round = [s for s in previous_statements if s.round_number == round_number - 1]
+            if last_round:
+                discussion_context = "\n\nLast Round:\n"
+                for stmt in last_round:
+                    # Only first key point to save tokens
+                    point = stmt.key_points[0] if stmt.key_points else "N/A"
+                    discussion_context += f"{stmt.agent_role.value}: {stmt.position} ({stmt.confidence:.0f}%) - {point}\n"
         
-        user_message = f"""Round {round_number} - Portfolio Discussion
+        user_message = f"""Round {round_number}
 
-Portfolio Positions:
+Portfolio ({len(positions)} stocks): Total Loss ${total_loss/1000:.0f}k, Tax Save ${total_saving/1000:.0f}k
 {positions_str}
+{context}{discussion_context}
 
-Additional Context:
-{context}
-
-{discussion_context}
-
-Your Response:
-Analyze the portfolio and state your position. Address other agents' arguments if applicable.
-Remember to be concise but thorough in your reasoning."""
+Your analysis:"""
         
         return system_prompt, user_message
     
@@ -199,12 +204,15 @@ Remember to be concise but thorough in your reasoning."""
         previous_statements: List[AgentStatement],
         round_number: int
     ) -> AgentStatement:
-        """Get a statement from an agent using LLM."""
+        """Get a statement from an agent using LLM with rate limit protection."""
         system_prompt, user_message = self._create_agent_prompt(
             agent_role, positions, context, previous_statements, round_number
         )
         
-        response = self.llm.chat_with_system(system_prompt, user_message)
+        # Add delay to avoid rate limits
+        time.sleep(self.api_delay)
+        
+        response = self.llm.chat_with_system(system_prompt, user_message, max_tokens=500)
         
         # Parse response
         lines = response.split("\n")
@@ -258,39 +266,29 @@ Remember to be concise but thorough in your reasoning."""
         positions: List[StockPosition],
         agent_statements: List[AgentStatement]
     ) -> Tuple[str, Dict[str, List[str]], Dict[str, List[str]]]:
-        """Supervisor evaluates if consensus has been reached."""
+        """Supervisor evaluates if consensus has been reached - OPTIMIZED."""
         
-        system_prompt = """You are the Debate Supervisor.
-Evaluate the discussion and determine:
-1. What consensus has been reached
-2. What still needs discussion
-3. Whether agents should continue debating
+        system_prompt = """You are Debate Supervisor. Evaluate consensus.
 
-Be analytical and concise. Output format:
+Output:
 CONSENSUS_STATUS: [Full/Partial/None]
-AGREEMENTS: [List what agents agree on]
-DISAGREEMENTS: [List what agents still disagree on]
-NEXT_STEPS: [What should be discussed next, if any]
-SATISFACTION_LEVEL: [0-100, how satisfied are all agents]"""
+AGREEMENTS: [Brief summary]
+DISAGREEMENTS: [Brief summary]
+NEXT_STEPS: [If any]"""
         
+        # OPTIMIZED: Compact summary
         statements_summary = "\n".join([
-            f"\n{stmt.agent_role.value}:\n"
-            f"  Position: {stmt.position} (Confidence: {stmt.confidence}%)\n"
-            f"  Key Points: {', '.join(stmt.key_points)}"
+            f"{stmt.agent_role.value}: {stmt.position} ({stmt.confidence:.0f}%)"
             for stmt in agent_statements
         ])
         
-        user_message = f"""Round {round_number} Discussion Summary:
+        user_message = f"""Round {round_number}
 
 {statements_summary}
 
-Evaluate:
-1. Are the agents reaching consensus?
-2. What do they agree on?
-3. What conflicts remain?
-4. Should they continue debating?"""
+Consensus?"""
         
-        response = self.llm.chat_with_system(system_prompt, user_message)
+        response = self.llm.chat_with_system(system_prompt, user_message, max_tokens=200)
         
         # Parse supervisor feedback
         lines = response.split("\n")
@@ -301,17 +299,9 @@ Evaluate:
         for line in lines:
             if "CONSENSUS_STATUS:" in line:
                 consensus_status = line.split(":")[-1].strip()
-            elif "AGREEMENTS:" in line or "AGREEMENT:" in line:
-                # Parse agreements
-                pass
-            elif "DISAGREEMENTS:" in line or "DISAGREEMENT:" in line:
-                # Parse disagreements
-                pass
         
-        # Extract from positions
+        # OPTIMIZED: Quick analysis by grouping positions
         positions_map = {p.symbol: p for p in positions}
-        
-        # Group by decision
         by_decision = {}
         for stmt in agent_statements:
             decision = stmt.position
@@ -385,23 +375,21 @@ Evaluate:
             
             # Supervisor evaluates consensus
             logger.info(f"  Round {round_num} - Supervisor evaluation")
+            time.sleep(self.api_delay)  # Rate limit protection
             consensus_status_str, agreements, disagreements = self._supervisor_evaluate_consensus(
                 round_num, positions, round_statements
             )
             
             # Get supervisor feedback
-            supervisor_prompt = f"""You are the Debate Supervisor. Provide brief, actionable feedback.
+            supervisor_prompt = f"""Round {round_num} - Consensus: {consensus_status_str}
 
-Round {round_num} Summary:
-- Consensus Status: {consensus_status_str}
-- Agreements: {agreements}
-- Disagreements: {disagreements}
-
-Provide guidance for the next round (or declare consensus reached)."""
+Feedback (brief):"""
             
+            time.sleep(self.api_delay)  # Rate limit protection
             supervisor_feedback = self.llm.chat_with_system(
-                "You are a portfolio debate supervisor. Be concise and decisive.",
-                supervisor_prompt
+                "You are a debate supervisor. Be very brief.",
+                supervisor_prompt,
+                max_tokens=150
             )
             
             # Create debate round
