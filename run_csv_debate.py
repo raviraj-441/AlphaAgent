@@ -119,7 +119,11 @@ Example CSV format:
 Usage examples:
   python run_csv_debate.py data/test_portfolios/sample.csv
   python run_csv_debate.py my_portfolio.csv --rounds 5
-  python run_csv_debate.py portfolio.csv --output results.txt
+  python run_csv_debate.py portfolio.csv --delay 2.0
+
+Output:
+  Logs are saved to logs/multi_turn_debates/ as JSON files
+  (same format as run_debate.py)
         """
     )
     
@@ -141,13 +145,6 @@ Usage examples:
         type=float,
         default=1.0,
         help='Delay between API calls in seconds (default: 1.0)'
-    )
-    
-    parser.add_argument(
-        '--output',
-        type=str,
-        default=None,
-        help='Output file path (default: auto-generated with timestamp)'
     )
     
     args = parser.parse_args()
@@ -220,52 +217,10 @@ Indian Tax Context:
         print(f"\nSupervisor Conclusion:")
         print(f"  {session.supervisor_conclusion[:200]}...")
         
-        # Determine output file
-        if args.output:
-            output_file = args.output
-        else:
-            csv_name = Path(args.csv_file).stem
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_file = f"debate_results_{csv_name}_{timestamp}.txt"
+        # Get the log file path (already saved by the debate system)
+        log_file = Path("logs") / "multi_turn_debates" / f"multi_turn_debate_{session.session_id}.json"
         
-        # Save to file
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write("PORTFOLIO DEBATE RESULTS\n")
-            f.write("="*80 + "\n\n")
-            f.write(f"CSV File: {args.csv_file}\n")
-            f.write(f"Session ID: {session.session_id}\n")
-            f.write(f"Debate Rounds: {args.rounds} (max)\n")
-            f.write(f"Total Rounds Completed: {session.total_rounds}\n")
-            f.write(f"Final Status: {session.final_status.value}\n\n")
-            
-            f.write("PORTFOLIO SUMMARY:\n")
-            f.write(f"  Stocks Analyzed: {len(positions)}\n")
-            f.write(f"  Total Loss: ₹{total_loss:,.0f}\n")
-            f.write(f"  Tax Saving Potential: ₹{total_tax_saving:,.0f}\n\n")
-            
-            f.write("FINAL STRATEGY:\n")
-            for symbol, decision in session.final_strategy.items():
-                f.write(f"  {symbol}: {decision}\n")
-            
-            f.write(f"\nSUPERVISOR CONCLUSION:\n")
-            f.write(f"{session.supervisor_conclusion}\n\n")
-            
-            f.write("DEBATE ROUNDS:\n")
-            f.write("="*80 + "\n")
-            for round in session.rounds:
-                f.write(f"\nROUND {round.round_number}:\n")
-                f.write(f"Timestamp: {round.timestamp}\n")
-                f.write(f"Consensus: {round.consensus_status}\n\n")
-                
-                for stmt in round.agent_statements:
-                    f.write(f"{stmt.agent_role.value}:\n")
-                    f.write(f"  Position: {stmt.position} ({stmt.confidence}% confidence)\n")
-                    f.write(f"  Key Points: {', '.join(stmt.key_points)}\n\n")
-                
-                f.write(f"Supervisor Feedback:\n{round.supervisor_feedback}\n")
-                f.write("-"*80 + "\n")
-        
-        print(f"\n✅ Full debate transcript saved to: {output_file}")
+        print(f"\n✅ Debate log saved to: {log_file}")
         
     except KeyboardInterrupt:
         logger.warning("\n\nDebate interrupted by user")

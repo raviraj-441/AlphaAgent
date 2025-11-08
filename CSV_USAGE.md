@@ -47,33 +47,39 @@ python run_csv_debate.py portfolio.csv --delay 1.5
 ```
 Default: 1.0 second between API calls
 
-### Custom Output File
-```bash
-python run_csv_debate.py portfolio.csv --output my_results.txt
-```
-Default: Auto-generated with timestamp
-
 ### Combine Options
 ```bash
-python run_csv_debate.py data/portfolio.csv --rounds 4 --delay 2.0 --output results.txt
+python run_csv_debate.py data/portfolio.csv --rounds 4 --delay 2.0
 ```
 
 ## Output
 
-The tool generates:
+All debate results are automatically saved to the **logs directory** in JSON format:
 
-1. **Console Output**: Live debate progress and summary
-2. **Text File**: Complete debate transcript with:
-   - Portfolio summary
-   - Each round's agent arguments
-   - Supervisor feedback
-   - Final recommendations
-   - Tax saving estimates
+```
+logs/multi_turn_debates/multi_turn_debate_<session_id>.json
+```
 
-Example output filename:
-```
-debate_results_my_portfolio_20251108_103932.txt
-```
+This follows the same logging structure as `run_debate.py` - ensuring consistent, structured logs for all debate sessions.
+
+### Console Output
+You'll see:
+- Portfolio summary (total loss, tax saving potential)
+- Live progress through debate rounds
+- Final strategy for each stock
+- Supervisor conclusion
+- Path to saved log file
+
+### Log File Contents
+The JSON log contains:
+- Session metadata (ID, timestamps, rounds)
+- All stock positions analyzed
+- Complete debate rounds with:
+  - Each agent's statement, position, confidence
+  - Key points and reasoning
+  - Supervisor feedback
+  - Consensus status
+- Final strategy recommendations
 
 ## What Gets Analyzed?
 
@@ -102,8 +108,8 @@ debate_results_my_portfolio_20251108_103932.txt
 
 3. **Review results**:
    - Check console for summary
-   - Open generated `.txt` file for full transcript
-   - Review `logs/multi_turn_debates/` for JSON data
+   - Open `logs/multi_turn_debates/multi_turn_debate_<session_id>.json` for complete data
+   - All debates follow the same JSON structure for easy analysis
 
 4. **Adjust if needed**:
    ```bash
